@@ -1,71 +1,65 @@
-image: docker:24.0.7
+stages:
+  - build
+  - push
+  - deploy
+
+variables:
+  DOCKER_TLS_CERTDIR: ""
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
 
 services:
   - docker:24.0.7-dind
 
-variables:
-  DOCKER_TLS_CERTDIR: ""
-  DOCKER_DRIVER: overlay2
-
-stages:
-  - build
-  - push
-  - deploy_dev
-  - deploy_qa
-  - deploy_staging
-  - deploy_prod
-
 before_script:
   - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
 
-# ======================
-# BUILD IMAGES
-# ======================
+############################
+# BUILD
+############################
 
 build_gateway:
   stage: build
   script:
-    - docker build -t fati1707/k-api-gateway:$CI_COMMIT_SHORT_SHA ./gateway
+    - docker build -t fati1707/k-api-gateway:$IMAGE_TAG gateway
 
 build_users:
   stage: build
   script:
-    - docker build -t fati1707/k-users:$CI_COMMIT_SHORT_SHA ./users
+    - docker build -t fati1707/k-users:$IMAGE_TAG users
 
 build_orders:
   stage: build
   script:
-    - docker build -t fati1707/k-orders:$CI_COMMIT_SHORT_SHA ./orders
+    - docker build -t fati1707/k-orders:$IMAGE_TAG orders
 
-# ======================
-# PUSH IMAGES
-# ======================
+############################
+# PUSH
+############################
 
 push_gateway:
   stage: push
   script:
-    - docker push fati1707/k-api-gateway:$CI_COMMIT_SHORT_SHA
+    - docker push fati1707/k-api-gateway:$IMAGE_TAG
   needs: ["build_gateway"]
 
 push_users:
   stage: push
   script:
-    - docker push fati1707/k-users:$CI_COMMIT_SHORT_SHA
+    - docker push fati1707/k-users:$IMAGE_TAG
   needs: ["build_users"]
 
 push_orders:
   stage: push
   script:
-    - docker push fati1707/k-orders:$CI_COMMIT_SHORT_SHA
+    - docker push fati1707/k-orders:$IMAGE_TAG
   needs: ["build_orders"]
 
-# ======================
-# DEPLOY DEV (AUTO)
-# ======================
+############################
+# DEPLOY DEV
+############################
 
 deploy_dev:
-  stage: deploy_dev
-  image: bitnami/kubectl:latest
+  stage: deploy
   script:
     - kubectl apply -f k8s/dev
   environment:
@@ -73,13 +67,12 @@ deploy_dev:
   only:
     - branches
 
-# ======================
-# DEPLOY QA (AUTO)
-# ======================
+############################
+# DEPLOY QA
+############################
 
 deploy_qa:
-  stage: deploy_qa
-  image: bitnami/kubectl:latest
+  stage: deploy
   script:
     - kubectl apply -f k8s/qa
   environment:
@@ -87,13 +80,12 @@ deploy_qa:
   only:
     - branches
 
-# ======================
-# DEPLOY STAGING (AUTO)
-# ======================
+############################
+# DEPLOY STAGING
+############################
 
 deploy_staging:
-  stage: deploy_staging
-  image: bitnami/kubectl:latest
+  stage: deploy
   script:
     - kubectl apply -f k8s/staging
   environment:
@@ -101,13 +93,12 @@ deploy_staging:
   only:
     - branches
 
-# ======================
-# DEPLOY PROD (MANUEL + MAIN)
-# ======================
+############################
+# DEPLOY PROD (MANUEL)
+############################
 
 deploy_prod:
-  stage: deploy_prod
-  image: bitnami/kubectl:latest
+  stage: deploy
   script:
     - kubectl apply -f k8s/prod
   environment:
