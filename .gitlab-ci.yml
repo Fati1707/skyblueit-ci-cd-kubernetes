@@ -1,55 +1,97 @@
-image: docker:25.0.3
-
-services:
-  - name: docker:25.0.3-dind
-    command: ["--tls=false"]
-
-variables:
-  DOCKER_HOST: tcp://docker:2375
-  DOCKER_TLS_CERTDIR: ""
-  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
-  KUBECONFIG: $KUBECONFIG
-
 stages:
   - build
+  - push
   - deploy
 
-.before_docker_login:
-  before_script:
-    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
+variables:
+  DOCKER_TLS_CERTDIR: ""
+  IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
 
-############################
-# BUILD + PUSH
-############################
+services:
+  - docker:25.0.3-dind
+
+# =========================
+# BUILD STAGE
+# =========================
 
 build_gateway:
   stage: build
-  extends: .before_docker_login
+  image: docker:25.0.3
   script:
     - docker build -t fati1707/k-api-gateway:$IMAGE_TAG ./gateway
-    - docker push fati1707/k-api-gateway:$IMAGE_TAG
+    - docker save fati1707/k-api-gateway:$IMAGE_TAG > gateway.tar
+  artifacts:
+    paths:
+      - gateway.tar
 
 build_users:
   stage: build
-  extends: .before_docker_login
+  image: docker:25.0.3
   script:
     - docker build -t fati1707/k-users:$IMAGE_TAG ./users
-    - docker push fati1707/k-users:$IMAGE_TAG
+    - docker save fati1707/k-users:$IMAGE_TAG > users.tar
+  artifacts:
+    paths:
+      - users.tar
 
 build_orders:
   stage: build
-  extends: .before_docker_login
+  image: docker:25.0.3
   script:
     - docker build -t fati1707/k-orders:$IMAGE_TAG ./orders
+    - docker save fati1707/k-orders:$IMAGE_TAG > orders.tar
+  artifacts:
+    paths:
+      - orders.tar
+
+# =========================
+# PUSH STAGE
+# =========================
+
+.push_template: &push_template
+  stage: push
+  image: docker:25.0.3
+  before_script:
+    - echo "$DOCKERHUB_PASSWORD" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
+
+push_gateway:
+  <<: *push_template
+  dependencies:
+    - build_gateway
+  script:
+    - docker load < gateway.tar
+    - docker push fati1707/k-api-gateway:$IMAGE_TAG
+
+push_users:
+  <<: *push_template
+  dependencies:
+    - build_users
+  script:
+    - docker load < users.tar
+    - docker push fati1707/k-users:$IMAGE_TAG
+
+push_orders:
+  <<: *push_template
+  dependencies:
+    - build_orders
+  script:
+    - docker load < orders.tar
     - docker push fati1707/k-orders:$IMAGE_TAG
 
-############################
-# DEPLOY
-############################
+# =========================
+# DEPLOY STAGE
+# =========================
 
-deploy_dev:
+.deploy_template: &deploy_template
   stage: deploy
   image: bitnami/kubectl:latest
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "$KUBECONFIG_CONTENT" > ~/.kube/config
+    - kubectl version --client
+
+deploy_dev:
+  <<: *deploy_template
   script:
     - kubectl apply -f k8s/dev
   environment:
@@ -58,8 +100,7 @@ deploy_dev:
     - main
 
 deploy_qa:
-  stage: deploy
-  image: bitnami/kubectl:latest
+  <<: *deploy_template
   script:
     - kubectl apply -f k8s/qa
   environment:
@@ -68,8 +109,7 @@ deploy_qa:
     - main
 
 deploy_staging:
-  stage: deploy
-  image: bitnami/kubectl:latest
+  <<: *deploy_template
   script:
     - kubectl apply -f k8s/staging
   environment:
@@ -78,8 +118,7 @@ deploy_staging:
     - main
 
 deploy_prod:
-  stage: deploy
-  image: bitnami/kubectl:latest
+  <<: *deploy_template
   script:
     - kubectl apply -f k8s/prod
   environment:
@@ -87,4 +126,3 @@ deploy_prod:
   when: manual
   only:
     - main
-
