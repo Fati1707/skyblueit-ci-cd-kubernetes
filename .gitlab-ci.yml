@@ -48,31 +48,42 @@ build_orders:
 
 deploy_dev:
   stage: deploy
+  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/dev
   environment:
     name: dev
+  only:
+    - main
 
 deploy_qa:
   stage: deploy
+  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/qa
   environment:
     name: qa
+  only:
+    - main
 
 deploy_staging:
   stage: deploy
+  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/staging
   environment:
     name: staging
+  only:
+    - main
 
 deploy_prod:
   stage: deploy
-  when: manual
-  only:
-    - main
+  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/prod
   environment:
     name: prod
+  when: manual
+  only:
+    - main
+
