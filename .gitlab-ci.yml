@@ -1,6 +1,5 @@
 stages:
   - build
-  - push
   - deploy
 
 variables:
@@ -8,51 +7,41 @@ variables:
   IMAGE_TAG: $CI_COMMIT_SHORT_SHA
 
 services:
-  - docker:24.0.7-dind
+  - docker:dind
 
 before_script:
   - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
 
 ############################
-# BUILD
+# BUILD + PUSH
 ############################
 
 build_gateway:
   stage: build
+  image: docker:24
   script:
-    - docker build -t fati1707/k-api-gateway:$IMAGE_TAG gateway
+    - docker build -t fati1707/k-api-gateway:$IMAGE_TAG ./gateway
+    - docker push fati1707/k-api-gateway:$IMAGE_TAG
+  only:
+    - branches
 
 build_users:
   stage: build
+  image: docker:24
   script:
-    - docker build -t fati1707/k-users:$IMAGE_TAG users
+    - docker build -t fati1707/k-users:$IMAGE_TAG ./users
+    - docker push fati1707/k-users:$IMAGE_TAG
+  only:
+    - branches
 
 build_orders:
   stage: build
+  image: docker:24
   script:
-    - docker build -t fati1707/k-orders:$IMAGE_TAG orders
-
-############################
-# PUSH
-############################
-
-push_gateway:
-  stage: push
-  script:
-    - docker push fati1707/k-api-gateway:$IMAGE_TAG
-  needs: ["build_gateway"]
-
-push_users:
-  stage: push
-  script:
-    - docker push fati1707/k-users:$IMAGE_TAG
-  needs: ["build_users"]
-
-push_orders:
-  stage: push
-  script:
+    - docker build -t fati1707/k-orders:$IMAGE_TAG ./orders
     - docker push fati1707/k-orders:$IMAGE_TAG
-  needs: ["build_orders"]
+  only:
+    - branches
 
 ############################
 # DEPLOY DEV
@@ -60,6 +49,7 @@ push_orders:
 
 deploy_dev:
   stage: deploy
+  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/dev
   environment:
@@ -73,6 +63,7 @@ deploy_dev:
 
 deploy_qa:
   stage: deploy
+  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/qa
   environment:
@@ -86,6 +77,7 @@ deploy_qa:
 
 deploy_staging:
   stage: deploy
+  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/staging
   environment:
@@ -94,11 +86,12 @@ deploy_staging:
     - branches
 
 ############################
-# DEPLOY PROD (MANUEL)
+# DEPLOY PROD (MANUEL + MAIN)
 ############################
 
 deploy_prod:
   stage: deploy
+  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/prod
   environment:
