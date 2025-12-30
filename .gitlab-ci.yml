@@ -1,16 +1,21 @@
+image: docker:25.0.3
+
+services:
+  - name: docker:25.0.3-dind
+    command: ["--tls=false"]
+
+variables:
+  DOCKER_HOST: tcp://docker:2375
+  DOCKER_TLS_CERTDIR: ""
+  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+
 stages:
   - build
   - deploy
 
-variables:
-  DOCKER_TLS_CERTDIR: ""
-  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
-
-services:
-  - docker:dind
-
-before_script:
-  - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
+.before_docker_login:
+  before_script:
+    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
 
 ############################
 # BUILD + PUSH
@@ -18,84 +23,56 @@ before_script:
 
 build_gateway:
   stage: build
-  image: docker:24
+  extends: .before_docker_login
   script:
     - docker build -t fati1707/k-api-gateway:$IMAGE_TAG ./gateway
     - docker push fati1707/k-api-gateway:$IMAGE_TAG
-  only:
-    - branches
 
 build_users:
   stage: build
-  image: docker:24
+  extends: .before_docker_login
   script:
     - docker build -t fati1707/k-users:$IMAGE_TAG ./users
     - docker push fati1707/k-users:$IMAGE_TAG
-  only:
-    - branches
 
 build_orders:
   stage: build
-  image: docker:24
+  extends: .before_docker_login
   script:
     - docker build -t fati1707/k-orders:$IMAGE_TAG ./orders
     - docker push fati1707/k-orders:$IMAGE_TAG
-  only:
-    - branches
 
 ############################
-# DEPLOY DEV
+# DEPLOY
 ############################
 
 deploy_dev:
   stage: deploy
-  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/dev
   environment:
     name: dev
-  only:
-    - branches
-
-############################
-# DEPLOY QA
-############################
 
 deploy_qa:
   stage: deploy
-  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/qa
   environment:
     name: qa
-  only:
-    - branches
-
-############################
-# DEPLOY STAGING
-############################
 
 deploy_staging:
   stage: deploy
-  image: bitnami/kubectl:latest
   script:
     - kubectl apply -f k8s/staging
   environment:
     name: staging
-  only:
-    - branches
-
-############################
-# DEPLOY PROD (MANUEL + MAIN)
-############################
 
 deploy_prod:
   stage: deploy
-  image: bitnami/kubectl:latest
+  when: manual
+  only:
+    - main
   script:
     - kubectl apply -f k8s/prod
   environment:
     name: prod
-  only:
-    - main
-  when: manual
