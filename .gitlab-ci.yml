@@ -4,93 +4,87 @@ stages:
   - deploy
 
 variables:
-  DOCKER_TLS_CERTDIR: ""
   IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  DOCKER_TLS_CERTDIR: ""
 
-# =========================
+########################
 # BUILD
-# =========================
-build_gateway:
+########################
+
+.build_template:
   stage: build
   image: docker:25.0.3
   services:
     - docker:25.0.3-dind
   script:
-    - docker build -t fati1707/k-api-gateway:$IMAGE_TAG ./gateway
-    - docker save fati1707/k-api-gateway:$IMAGE_TAG > gateway.tar
+    - docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG $BUILD_CONTEXT
   artifacts:
+    expire_in: 1 hour
     paths:
-      - gateway.tar
+      - image.txt
+
+build_gateway:
+  extends: .build_template
+  variables:
+    IMAGE_NAME: k-api-gateway
+    BUILD_CONTEXT: gateway
 
 build_users:
-  stage: build
-  image: docker:25.0.3
-  services:
-    - docker:25.0.3-dind
-  script:
-    - docker build -t fati1707/k-users:$IMAGE_TAG ./users
-    - docker save fati1707/k-users:$IMAGE_TAG > users.tar
-  artifacts:
-    paths:
-      - users.tar
+  extends: .build_template
+  variables:
+    IMAGE_NAME: k-users
+    BUILD_CONTEXT: users
 
 build_orders:
-  stage: build
-  image: docker:25.0.3
-  services:
-    - docker:25.0.3-dind
-  script:
-    - docker build -t fati1707/k-orders:$IMAGE_TAG ./orders
-    - docker save fati1707/k-orders:$IMAGE_TAG > orders.tar
-  artifacts:
-    paths:
-      - orders.tar
+  extends: .build_template
+  variables:
+    IMAGE_NAME: k-orders
+    BUILD_CONTEXT: orders
 
-# =========================
+########################
 # PUSH
-# =========================
-push_gateway:
+########################
+
+.push_template:
   stage: push
   image: docker:25.0.3
   services:
     - docker:25.0.3-dind
-  dependencies:
-    - build_gateway
   script:
-    - docker load < gateway.tar
     - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
-    - docker push fati1707/k-api-gateway:$IMAGE_TAG
+    - docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG $BUILD_CONTEXT
+    - docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG
+
+push_gateway:
+  extends: .push_template
+  variables:
+    IMAGE_NAME: k-api-gateway
+    BUILD_CONTEXT: gateway
 
 push_users:
-  stage: push
-  image: docker:25.0.3
-  services:
-    - docker:25.0.3-dind
-  dependencies:
-    - build_users
-  script:
-    - docker load < users.tar
-    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
-    - docker push fati1707/k-users:$IMAGE_TAG
+  extends: .push_template
+  variables:
+    IMAGE_NAME: k-users
+    BUILD_CONTEXT: users
 
 push_orders:
-  stage: push
-  image: docker:25.0.3
-  services:
-    - docker:25.0.3-dind
-  dependencies:
-    - build_orders
-  script:
-    - docker load < orders.tar
-    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
-    - docker push fati1707/k-orders:$IMAGE_TAG
+  extends: .push_template
+  variables:
+    IMAGE_NAME: k-orders
+    BUILD_CONTEXT: orders
 
-# =========================
+########################
 # DEPLOY
-# =========================
+########################
+
 .deploy_template:
   stage: deploy
-  image: bitnami/kubectl:latest
+  image:
+    name: bitnami/kubectl:latest
+    entrypoint: [""]
+  before_script:
+    - mkdir -p ~/.kube
+    - echo "$KUBECONFIG_CONTENT" > ~/.kube/config
   script:
     - kubectl apply -f $K8S_PATH --validate=false
 
@@ -109,6 +103,8 @@ deploy_qa:
     K8S_PATH: k8s/qa
   environment:
     name: qa
+  only:
+    - main
 
 deploy_staging:
   extends: .deploy_template
@@ -116,6 +112,8 @@ deploy_staging:
     K8S_PATH: k8s/staging
   environment:
     name: staging
+  only:
+    - main
 
 deploy_prod:
   extends: .deploy_template
