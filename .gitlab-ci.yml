@@ -4,123 +4,142 @@ stages:
   - deploy
 
 variables:
-  IMAGE_TAG: $CI_COMMIT_SHORT_SHA
   DOCKER_TLS_CERTDIR: ""
+  IMAGE_TAG: "$CI_COMMIT_SHORT_SHA"
 
-########################
-# BUILD
-########################
+services:
+  - docker:dind
 
-.build_template:
+############################
+# BUILD IMAGES
+############################
+
+.build_template: &build_template
   stage: build
   image: docker:25.0.3
-  services:
-    - docker:25.0.3-dind
+  before_script:
+    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
+
+build_gateway:
+  <<: *build_template
   script:
-    - docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG $BUILD_CONTEXT
+    - docker build -t $DOCKERHUB_USERNAME/k-api-gateway:$IMAGE_TAG ./gateway
   artifacts:
     expire_in: 1 hour
     paths:
-      - image.txt
-
-build_gateway:
-  extends: .build_template
-  variables:
-    IMAGE_NAME: k-api-gateway
-    BUILD_CONTEXT: gateway
+      - gateway/
 
 build_users:
-  extends: .build_template
-  variables:
-    IMAGE_NAME: k-users
-    BUILD_CONTEXT: users
+  <<: *build_template
+  script:
+    - docker build -t $DOCKERHUB_USERNAME/k-users:$IMAGE_TAG ./users
+  artifacts:
+    expire_in: 1 hour
+    paths:
+      - users/
 
 build_orders:
-  extends: .build_template
-  variables:
-    IMAGE_NAME: k-orders
-    BUILD_CONTEXT: orders
+  <<: *build_template
+  script:
+    - docker build -t $DOCKERHUB_USERNAME/k-orders:$IMAGE_TAG ./orders
+  artifacts:
+    expire_in: 1 hour
+    paths:
+      - orders/
 
-########################
-# PUSH
-########################
+############################
+# PUSH IMAGES
+############################
 
-.push_template:
+.push_template: &push_template
   stage: push
   image: docker:25.0.3
-  services:
-    - docker:25.0.3-dind
-  script:
+  before_script:
     - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
-    - docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG $BUILD_CONTEXT
-    - docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG
 
 push_gateway:
-  extends: .push_template
-  variables:
-    IMAGE_NAME: k-api-gateway
-    BUILD_CONTEXT: gateway
+  <<: *push_template
+  script:
+    - docker push $DOCKERHUB_USERNAME/k-api-gateway:$IMAGE_TAG
+  needs: ["build_gateway"]
 
 push_users:
-  extends: .push_template
-  variables:
-    IMAGE_NAME: k-users
-    BUILD_CONTEXT: users
+  <<: *push_template
+  script:
+    - docker push $DOCKERHUB_USERNAME/k-users:$IMAGE_TAG
+  needs: ["build_users"]
 
 push_orders:
-  extends: .push_template
-  variables:
-    IMAGE_NAME: k-orders
-    BUILD_CONTEXT: orders
+  <<: *push_template
+  script:
+    - docker push $DOCKERHUB_USERNAME/k-orders:$IMAGE_TAG
+  needs: ["build_orders"]
 
-########################
-# DEPLOY
-########################
+############################
+# DEPLOY TEMPLATE
+############################
 
-.deploy_template:
+.deploy_template: &deploy_template
   stage: deploy
-  image:
-    name: bitnami/kubectl:latest
-    entrypoint: [""]
+  image: bitnami/kubectl:latest
   before_script:
     - mkdir -p ~/.kube
     - echo "$KUBECONFIG_CONTENT" > ~/.kube/config
-  script:
-    - kubectl apply -f $K8S_PATH --validate=false
+    - kubectl version --client
+
+############################
+# DEPLOY DEV
+############################
 
 deploy_dev:
-  extends: .deploy_template
-  variables:
-    K8S_PATH: k8s/dev
+  <<: *deploy_template
+  script:
+    - kubectl apply -f k8s/dev --validate=false
   environment:
     name: dev
-  only:
-    - main
+  needs:
+    - push_gateway
+    - push_users
+    - push_orders
+
+############################
+# DEPLOY QA
+############################
 
 deploy_qa:
-  extends: .deploy_template
-  variables:
-    K8S_PATH: k8s/qa
+  <<: *deploy_template
+  script:
+    - kubectl apply -f k8s/qa --validate=false
   environment:
     name: qa
-  only:
-    - main
+  needs:
+    - deploy_dev
+
+############################
+# DEPLOY STAGING
+############################
 
 deploy_staging:
-  extends: .deploy_template
-  variables:
-    K8S_PATH: k8s/staging
+  <<: *deploy_template
+  script:
+    - kubectl apply -f k8s/staging --validate=false
   environment:
     name: staging
-  only:
-    - main
+  needs:
+    - deploy_qa
+
+############################
+# DEPLOY PROD (MANUEL)
+############################
 
 deploy_prod:
-  extends: .deploy_template
-  variables:
-    K8S_PATH: k8s/prod
+  <<: *deploy_template
+  script:
+    - kubectl apply -f k8s/prod --validate=false
   environment:
     name: prod
   when: manual
   only:
     - main
+  needs:
+    - deploy_staging
