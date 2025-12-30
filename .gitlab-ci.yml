@@ -4,85 +4,43 @@ stages:
   - deploy
 
 variables:
-  DOCKER_HOST: tcp://docker:2375
-  DOCKER_TLS_CERTDIR: ""
   IMAGE_TAG: $CI_COMMIT_SHORT_SHA
+  DOCKER_TLS_CERTDIR: ""
 
-services:
-  - name: docker:25.0.3-dind
-    command: ["--tls=false"]
-
-########################
+# ======================
 # BUILD
-########################
+# ======================
 
 .build_template:
   stage: build
   image: docker:25.0.3
+  services:
+    - docker:25.0.3-dind
   before_script:
-    - docker info
-  script:
-    - docker build -t $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG $BUILD_CONTEXT
-    - docker save $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG > $IMAGE_NAME.tar
-  artifacts:
-    paths:
-      - $IMAGE_NAME.tar
+    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
 
 build_gateway:
   extends: .build_template
-  variables:
-    IMAGE_NAME: k-api-gateway
-    BUILD_CONTEXT: gateway
+  script:
+    - docker build -t $DOCKERHUB_USERNAME/k-api-gateway:$IMAGE_TAG ./gateway
+    - docker push $DOCKERHUB_USERNAME/k-api-gateway:$IMAGE_TAG
 
 build_users:
   extends: .build_template
-  variables:
-    IMAGE_NAME: k-users
-    BUILD_CONTEXT: users
+  script:
+    - docker build -t $DOCKERHUB_USERNAME/k-users:$IMAGE_TAG ./users
+    - docker push $DOCKERHUB_USERNAME/k-users:$IMAGE_TAG
 
 build_orders:
   extends: .build_template
-  variables:
-    IMAGE_NAME: k-orders
-    BUILD_CONTEXT: orders
-
-########################
-# PUSH
-########################
-
-.push_template:
-  stage: push
-  image: docker:25.0.3
-  before_script:
-    - docker load < $IMAGE_NAME.tar
-    - docker login -u "$DOCKERHUB_USERNAME" -p "$DOCKERHUB_PASSWORD"
   script:
-    - docker push $DOCKERHUB_USERNAME/$IMAGE_NAME:$IMAGE_TAG
+    - docker build -t $DOCKERHUB_USERNAME/k-orders:$IMAGE_TAG ./orders
+    - docker push $DOCKERHUB_USERNAME/k-orders:$IMAGE_TAG
 
-push_gateway:
-  extends: .push_template
-  variables:
-    IMAGE_NAME: k-api-gateway
-  dependencies:
-    - build_gateway
 
-push_users:
-  extends: .push_template
-  variables:
-    IMAGE_NAME: k-users
-  dependencies:
-    - build_users
-
-push_orders:
-  extends: .push_template
-  variables:
-    IMAGE_NAME: k-orders
-  dependencies:
-    - build_orders
-
-########################
+# ======================
 # DEPLOY
-########################
+# ======================
 
 .deploy_template:
   stage: deploy
@@ -90,7 +48,7 @@ push_orders:
   before_script:
     - mkdir -p ~/.kube
     - echo "$KUBECONFIG_CONTENT" > ~/.kube/config
-    - kubectl version --client
+    - kubectl config set-cluster default --insecure-skip-tls-verify=true
   script:
     - kubectl apply -f $K8S_PATH --validate=false
 
