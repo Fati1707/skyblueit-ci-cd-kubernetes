@@ -1,0 +1,20 @@
+namespace: qa
+
+gateway:
+  image: fati1707/k-api-gateway
+  tag: latest
+  port: 8000
+  replicas: 1
+
+orders:
+  image: fati1707/k-api-orders
+  tag: latest
+  port: 8001
+  replicas: 1
+
+users:
+  image: fati1707/k-api-users
+  tag: latest
+  port: 8002
+  replicas: 1
+
